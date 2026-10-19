@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>B站广告跳过悬浮窗</title>
+    <link rel="stylesheet" href="/src/floating/floating.css" />
+  </head>
+  <body class="is-collapsed">
+    <button id="launcher" class="launcher" type="button" title="打开广告跳过面板" aria-label="打开广告跳过面板">
+      <span class="launcher-mark">跳</span>
+      <span class="launcher-dot" aria-hidden="true"></span>
+    </button>
+    <main id="panel" class="panel">
+      <header id="drag-handle" class="panel-header">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">跳</span>
+          <div class="brand-copy">
+            <div class="brand-title">B站广告跳过</div>
+            <div class="brand-meta"><span id="status-dot" class="status-dot"></span><span id="compact-status">准备中</span><span id="version"></span></div>
+          </div>
+        </div>
+        <button id="minimize" class="icon-button" type="button" title="收起/展开" aria-label="收起或展开面板">—</button>
+      </header>
+
+      <nav class="tabs" aria-label="悬浮窗栏目">
+        <button type="button" class="tab active" data-tab="status"><span>⌂</span>状态</button>
+        <button type="button" class="tab" data-tab="settings"><span>⚙</span>设置</button>
+        <button type="button" class="tab" data-tab="ai"><span>✦</span>AI</button>
+        <button type="button" class="tab" data-tab="logs"><span>▤</span>日志</button>
+      </nav>
+
+      <div id="panel-body" class="panel-body">
+        <section class="tab-panel active" data-panel="status">
+          <div id="status-banner" class="status-banner info">
+            <strong id="status-title">等待进入视频页面</strong>
+            <span id="status-detail">打开 B 站视频后会自动读取字幕并扫描广告。</span>
+          </div>
+          <section id="vcaptions-notice" class="dependency-card hidden">
+            <div class="dependency-title"><span>可选依赖</span> 未检测到 vCaptions</div>
+            <p>广告跳过仍可使用 B 站字幕。安装并启用 vCaptions 后，还能显示完整字幕列表、翻译和点击字幕界面。</p>
+            <a href="https://microsoftedge.microsoft.com/addons/detail/vcaptions-%E7%BD%91%E7%AB%99%E8%A7%86%E9%A2%91%E5%AD%97%E5%B9%95%E5%88%97%E8%A1%A8/lignnlhlpiefmcjkdkmfjdckhlaiajan?hl=zh-CN" target="_blank" rel="noopener noreferrer">安装或检查 vCaptions</a>
+          </section>
+          <div class="summary-card">
+            <div class="summary-row"><span>当前视频</span><strong id="video-title">—</strong></div>
+            <div class="summary-row"><span>识别结果</span><strong id="segment-count">0 个片段</strong></div>
+            <div class="summary-row"><span>AI 状态</span><strong id="ai-status">未启用</strong></div>
+          </div>
+          <section id="jump-candidates-card" class="jump-candidates-card hidden">
+            <div class="tip-title">识别到的空降时间</div>
+            <div id="jump-candidates" class="jump-candidates"></div>
+          </section>
+          <div class="tips">
+            <div class="tip-title">使用说明</div>
+            <ul>
+              <li>打开 B 站视频后等待字幕加载。</li>
+              <li>命中广告时会按设置暂停询问或直接跳过。</li>
+              <li>可在“设置”和“AI”中调整词库与模型。</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="tab-panel" data-panel="settings">
+          <label class="field-block">
+            <span>产品词库</span>
+            <textarea id="keywords" rows="6" spellcheck="false" placeholder="每行一个产品词"></textarea>
+          </label>
+          <label class="check-row"><input id="confirm-skip" type="checkbox" /><span>跳过前暂停并确认</span></label>
+          <label class="check-row"><input id="context-ads" type="checkbox" /><span>识别不含产品名的通用商单</span></label>
+          <label class="check-row"><input id="danmaku-jump" type="checkbox" /><span>识别弹幕空降时间</span></label>
+          <label class="check-row"><input id="comment-evidence" type="checkbox" /><span>在提示中显示置顶评论佐证</span></label>
+          <div class="number-grid">
+            <label><span>合并间隔</span><input id="merge-gap" type="number" min="0" max="120" step="0.5" /></label>
+            <label><span>前缓冲</span><input id="before-buffer" type="number" min="0" max="10" step="0.1" /></label>
+            <label><span>后缓冲</span><input id="after-buffer" type="number" min="0" max="30" step="0.1" /></label>
+          </div>
+        </section>
+
+        <section class="tab-panel" data-panel="ai">
+          <label class="check-row"><input id="ai-enabled" type="checkbox" /><span>启用 AI 字幕广告识别</span></label>
+          <label class="field-block"><span>服务商</span>
+            <select id="ai-provider">
+              <option value="deepseek">DeepSeek</option>
+              <option value="openai">OpenAI</option>
+              <option value="custom">自定义兼容接口</option>
+            </select>
+          </label>
+          <label class="field-block"><span>API 地址</span><input id="ai-endpoint" type="url" spellcheck="false" /></label>
+          <label class="field-block"><span>模型</span><input id="ai-model" type="text" spellcheck="false" /></label>
+          <label class="field-block"><span>API Key</span><input id="ai-api-key" type="password" autocomplete="off" spellcheck="false" /></label>
+          <label class="field-block"><span>最低置信度</span><input id="ai-confidence" type="number" min="0" max="1" step="0.05" /></label>
+          <p class="privacy-note">只发送标题和字幕文本，不发送音频或词库。API Key 保存在扩展本地。</p>
+        </section>
+
+        <section class="tab-panel" data-panel="logs">
+          <div id="log-list" class="log-list" role="log" aria-live="polite"></div>
+        </section>
+
+        <footer class="panel-footer">
+          <span id="save-message" role="status"></span>
+          <button id="save-settings" type="button" class="save-button">保存设置</button>
+        </footer>
+      </div>
+    </main>
+    <script type="module" src="/src/floating/index.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>B站广告片段跳过设置</title>
+    <link rel="stylesheet" href="/src/options/options.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div class="mark" aria-hidden="true">跳</div>
+        <div>
+          <p class="eyebrow">BILIBILI · LOCAL ONLY</p>
+          <h1>B站广告片段跳过</h1>
+          <p class="subtitle">本地规则不调用 AI；启用 AI 后，只把标题和字幕发送到你配置的模型接口。</p>
+        </div>
+      </header>
+
+      <section class="notice">
+        产品词或连续商单语境都可以触发识别，推广上下文会补齐同一广告段。广告既没有产品词也没有推广语境的部分仍可能保留；产品评测等正常内容只要提到词库中的词，也会按你的规则命中。
+      </section>
+
+      <form id="settings-form">
+        <section class="card">
+          <div class="card-heading">
+            <div>
+              <h2>产品词库</h2>
+              <p>每行一个词，保存时忽略英文大小写并自动合并重复项。</p>
+            </div>
+            <span id="keyword-count" class="counter">0 个词</span>
+          </div>
+          <label class="sr-only" for="keywords">产品词库</label>
+          <textarea id="keywords" rows="10" spellcheck="false" placeholder="例如：
+某品牌
+优惠码
+推广产品"></textarea>
+          <p class="hint">按字面包含匹配，不支持正则表达式。词库初始为空。</p>
+        </section>
+
+        <section class="card">
+          <h2>跳转方式</h2>
+          <label class="switch-row">
+            <span>
+              <strong>先暂停并确认</strong>
+              <small>关闭后会直接跳过，并显示短暂提示与撤销按钮。</small>
+            </span>
+            <input id="confirm-before-skip" type="checkbox" />
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+          <label class="switch-row">
+            <span>
+              <strong>显示置顶评论佐证</strong>
+              <small>提示框会标出 UP 主置顶评论也提到了相关产品；评论不参与时间定位。</small>
+            </span>
+            <input id="show-comment-evidence" type="checkbox" />
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+          <label class="switch-row">
+            <span>
+              <strong>识别不含词库产品名的商单</strong>
+              <small>连续字幕同时出现开场引导、交易/保障用词和购买号召时也会识别；关闭后只使用产品词库。</small>
+            </span>
+            <input id="detect-context-ads" type="checkbox" />
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+          <label class="switch-row">
+            <span>
+              <strong>识别弹幕空降时间</strong>
+              <small>解析“空降 8:16”“八一六”等弹幕；只跳转到当前时间之后，并过滤 666、2333 等常见干扰。</small>
+            </span>
+            <input id="danmaku-jump" type="checkbox" />
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+        </section>
+
+        <section class="card ai-card">
+          <div class="card-heading">
+            <div>
+              <h2>AI 字幕广告识别</h2>
+              <p>只把字幕、标题和时间点发送给模型，要求返回疑似广告的起止范围；跳转仍由本地扩展执行。</p>
+            </div>
+            <span class="counter">可选</span>
+          </div>
+          <label class="switch-row">
+            <span>
+              <strong>启用 AI 辅助识别</strong>
+              <small>与本地规则结果合并；关闭或调用失败时，产品词和通用商单规则继续工作。</small>
+            </span>
+            <input id="ai-enabled" type="checkbox" />
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+          <div id="ai-fields" class="ai-fields">
+            <label class="field">
+              <span>服务商</span>
+              <select id="ai-provider">
+                <option value="deepseek">DeepSeek</option>
+                <option value="openai">OpenAI</option>
+                <option value="custom">自定义兼容接口</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>OpenAI 兼容 API 地址</span>
+              <input id="ai-endpoint" type="url" spellcheck="false" placeholder="https://api.deepseek.com/v1" />
+            </label>
+            <label class="field">
+              <span>模型名称</span>
+              <input id="ai-model" type="text" spellcheck="false" placeholder="deepseek-chat" />
+            </label>
+            <label class="field full-field">
+              <span>API Key</span>
+              <input id="ai-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-..." />
+            </label>
+            <label class="field">
+              <span>最低置信度</span>
+              <span class="input-wrap"><input id="ai-confidence" type="number" min="0" max="1" step="0.05" /> （0–1）</span>
+            </label>
+          </div>
+          <p class="ai-notice">启用后会向上述 API 发送当前视频的标题和字幕文本，可能产生调用费用。API Key 仅保存于当前 Edge 扩展的本地存储，不会发送给 B 站。</p>
+        </section>
+
+        <section class="card grid-card">
+          <div>
+            <h2>片段边界</h2>
+            <p>相邻产品词命中间隔不超过该值时直接合并。间隔更长时，若中间字幕持续出现“好消息、挖到宝、严选、验机报告、质保、优惠券、福利”等推广语境，仍会补成同一个片段。</p>
+          </div>
+          <label class="number-field">
+            <span>合并间隔</span>
+            <span class="input-wrap"><input id="merge-gap" type="number" min="0" max="120" step="0.5" /> 秒</span>
+          </label>
+          <label class="number-field">
+            <span>向前缓冲</span>
+            <span class="input-wrap"><input id="before-buffer" type="number" min="0" max="10" step="0.1" /> 秒</span>
+          </label>
+          <label class="number-field">
+            <span>向后缓冲</span>
+            <span class="input-wrap"><input id="after-buffer" type="number" min="0" max="30" step="0.1" /> 秒</span>
+          </label>
+        </section>
+
+        <div class="actions">
+          <button type="button" id="reset" class="button ghost">恢复默认</button>
+          <button type="submit" class="button primary">保存设置</button>
+          <span id="save-status" role="status" aria-live="polite"></span>
+        </div>
+      </form>
+
+      <section class="help card">
+        <h2>使用前检查</h2>
+        <ol>
+          <li>在 Edge 扩展管理页开启“开发人员模式”，加载本项目的 <code>dist</code> 文件夹。</li>
+          <li>登录 B 站以读取公开字幕。vCaptions 是可选的字幕列表组件；未安装时扩展仍会直接读取 B 站字幕。</li>
+          <li>vCaptions 的完整字幕列表位于独立扩展 iframe 中，其他扩展不能直接读取或点击其中的字幕行。本扩展使用与 vCaptions 相同的 B 站字幕接口取得时间轴，并直接调整播放进度完成跳转。</li>
+        </ol>
+      </section>
+    </main>
+    <script type="module" src="/src/options/index.ts"></script>
+  </body>
+</html>

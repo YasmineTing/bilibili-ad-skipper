@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "B站广告片段跳过（vCaptions 辅助）",
+  "version": "0.5.4",
+  "description": "用本地字幕规则、B站弹幕空降时间和可选 DeepSeek AI 识别广告，确认或自动跳过。",
+  "minimum_chrome_version": "109",
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "permissions": ["storage"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "host_permissions": [
+    "https://bilibili.com/*",
+    "https://*.bilibili.com/*",
+    "https://api.bilibili.com/*",
+    "https://*.hdslb.com/*",
+    "https://comment.bilibili.com/*",
+    "https://api.deepseek.com/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_title": "显示/隐藏广告跳过悬浮窗",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.bilibili.com/*",
+        "https://bilibili.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["floating.html", "assets/*"],
+      "matches": ["https://*.bilibili.com/*", "https://bilibili.com/*"]
+    }
+  ]
+}
