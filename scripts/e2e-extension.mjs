@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 const edgePath = process.env.EDGE_PATH || "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const extensionPath = resolve("dist");
 const profileDir = resolve(".tmp-e2e-profile");
-await rm(profileDir, { recursive: true, force: true });
+await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
 await mkdir(profileDir, { recursive: true });
 
 const context = await chromium.launchPersistentContext(profileDir, {
@@ -66,5 +66,7 @@ const observed = await page.waitForFunction(() => {
 console.log(JSON.stringify({ extensionId, danmakuEndpoint, saved, floatingPanel, observed }, null, 2));
 } finally {
   await context.close();
-  await rm(profileDir, { recursive: true, force: true });
+  await rm(profileDir, { recursive: true, force: true }).catch((error) => {
+    console.warn(`清理临时目录失败（不影响测试结果）：${error instanceof Error ? error.message : error}`);
+  });
 }

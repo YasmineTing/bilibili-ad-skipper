@@ -1,7 +1,7 @@
+import { sanitizeRules, type CustomRule } from "./core/rules";
+
 export interface Settings {
   keywords: string[];
-  confirmBeforeSkip: boolean;
-  showCommentEvidence: boolean;
   detectContextAds: boolean;
   danmakuJumpEnabled: boolean;
   aiEnabled: boolean;
@@ -13,14 +13,13 @@ export interface Settings {
   mergeGapSeconds: number;
   beforeBufferSeconds: number;
   afterBufferSeconds: number;
+  customRules: CustomRule[];
 }
 
 export const SETTINGS_KEY = "settings";
 
 export const DEFAULT_SETTINGS: Settings = {
   keywords: [],
-  confirmBeforeSkip: true,
-  showCommentEvidence: true,
   detectContextAds: true,
   danmakuJumpEnabled: true,
   aiEnabled: false,
@@ -31,7 +30,8 @@ export const DEFAULT_SETTINGS: Settings = {
   aiMinConfidence: 0.65,
   mergeGapSeconds: 8,
   beforeBufferSeconds: 1,
-  afterBufferSeconds: 2
+  afterBufferSeconds: 2,
+  customRules: []
 };
 
 export function normalizeKeyword(value: string): string {
@@ -61,8 +61,6 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
 export function sanitizeSettings(value: Partial<Settings> | undefined): Settings {
   return {
     keywords: normalizeKeywords(Array.isArray(value?.keywords) ? value.keywords.filter((word): word is string => typeof word === "string") : []),
-    confirmBeforeSkip: value?.confirmBeforeSkip !== false,
-    showCommentEvidence: value?.showCommentEvidence !== false,
     detectContextAds: value?.detectContextAds !== false,
     danmakuJumpEnabled: value?.danmakuJumpEnabled !== false,
     aiEnabled: value?.aiEnabled === true,
@@ -77,7 +75,8 @@ export function sanitizeSettings(value: Partial<Settings> | undefined): Settings
     aiMinConfidence: clampNumber(value?.aiMinConfidence, DEFAULT_SETTINGS.aiMinConfidence, 0, 1),
     mergeGapSeconds: clampNumber(value?.mergeGapSeconds, DEFAULT_SETTINGS.mergeGapSeconds, 0, 120),
     beforeBufferSeconds: clampNumber(value?.beforeBufferSeconds, DEFAULT_SETTINGS.beforeBufferSeconds, 0, 10),
-    afterBufferSeconds: clampNumber(value?.afterBufferSeconds, DEFAULT_SETTINGS.afterBufferSeconds, 0, 30)
+    afterBufferSeconds: clampNumber(value?.afterBufferSeconds, DEFAULT_SETTINGS.afterBufferSeconds, 0, 30),
+    customRules: sanitizeRules(value?.customRules)
   };
 }
 

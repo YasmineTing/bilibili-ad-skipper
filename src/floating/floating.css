@@ -168,8 +168,12 @@ button, input, textarea, select { font: inherit; }
 .field-block input:focus, .field-block textarea:focus, .field-block select:focus, .number-grid input:focus {
   outline: 3px solid rgba(0,174,236,.14); border-color: #00aeec;
 }
-.check-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; color: #444f5c; font-size: 12px; cursor: pointer; }
-.check-row input { accent-color: #00aeec; }
+.rules-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; margin-bottom: 11px; border: 1px solid #e4e7eb; border-radius: 9px; background: #fbfcfd; }
+.rules-summary-copy { display: grid; gap: 2px; color: #6d7783; font-size: 11px; }
+.rules-summary-copy strong { color: #28313d; font-size: 12px; }
+.rules-manage { padding: 5px 9px; border: 1px solid #d7dce2; border-radius: 7px; background: #fff; color: #0077b6; font-size: 11px; cursor: pointer; }
+.rules-manage:hover { border-color: #00aeec; }
+.check-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; color: #444f5c; font-size: 12px; cursor: pointer; }.check-row input { accent-color: #00aeec; }
 .number-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
 .number-grid label { display: grid; gap: 5px; color: #6d7783; font-size: 11px; }
 

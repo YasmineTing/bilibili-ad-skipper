@@ -1,10 +1,11 @@
+import { BoundedMap } from "../core/cache";
 import type { AiSegmentResult, Cue } from "../core/types";
 import type { Settings } from "../settings";
 
 const MAX_CHUNK_CHARS = 45_000;
 const CHUNK_OVERLAP_CUES = 40;
 const CONCURRENCY = 2;
-const analysisCache = new Map<string, { segments: AiSegmentResult[]; model: string }>();
+const analysisCache = new BoundedMap<string, { segments: AiSegmentResult[]; model: string }>(12);
 
 interface TranscriptChunk {
   cues: Cue[];

@@ -1,5 +1,15 @@
 import { buildSegments, matchedKeywords, mergeSegmentList, nextCueForTarget } from "../core/segments";
 import { matchAdContext } from "../core/ad-context";
+import { buildRuleSegments } from "../core/rules";
+import { isInsideSegment } from "../core/segment-window";
+import {
+  buildJumpCandidates,
+  groupDanmakuOptions,
+  isTrustworthyJumpOption,
+  selectJumpHintsForSegment,
+  selectNearbyJumpHints,
+  type JumpOption
+} from "../core/jump-options";
 import type { DanmakuJumpHint } from "../core/danmaku";
 import type { AiAnalysisResponse, BackgroundRequest, BackgroundResponse, DanmakuResponse, Segment, SubtitleBundle } from "../core/types";
 import {
@@ -11,7 +21,7 @@ import {
 } from "../settings";
 import { findVideoElement, parseVideoRef, videoKey, type VideoRef } from "./bilibili";
 import { FloatingPanelHost } from "./floating-host";
-import { ExtensionUi, type JumpOptionView } from "./ui";
+import { ExtensionUi } from "./ui";
 import { VCaptionsAdapter } from "./vcaptions";
 
 const VCAPTIONS_STORE_URL = "https://microsoftedge.microsoft.com/addons/detail/vcaptions-%E7%BD%91%E7%AB%99%E8%A7%86%E9%A2%91%E5%AD%97%E5%B9%95%E5%88%97%E8%A1%A8/lignnlhlpiefmcjkdkmfjdckhlaiajan?hl=zh-CN";
@@ -24,13 +34,6 @@ function formatClock(ms: number): string {
   return hours > 0
     ? `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`
     : `${minutes}:${String(rest).padStart(2, "0")}`;
-}
-
-interface DanmakuJumpOption {
-  targetMs: number;
-  hint: DanmakuJumpHint;
-  cluster: DanmakuJumpHint[];
-  samples: string[];
 }
 
 function sendBackground(message: BackgroundRequest): Promise<BackgroundResponse | AiAnalysisResponse | DanmakuResponse | { ok: true }> {
@@ -51,7 +54,7 @@ function sendBackground(message: BackgroundRequest): Promise<BackgroundResponse 
 }
 
 function cloneDefaults(): Settings {
-  return { ...DEFAULT_SETTINGS, keywords: [...DEFAULT_SETTINGS.keywords] };
+  return { ...DEFAULT_SETTINGS, keywords: [...DEFAULT_SETTINGS.keywords], customRules: [] };
 }
 
 class AdSkipper {
@@ -71,7 +74,6 @@ class AdSkipper {
   private readonly handledDanmakuHints = new Set<string>();
   private lastJumpPanelUpdate = -1;
   private readonly ignored = new Set<string>();
-  private activePrompt: { segment: Segment; wasPlaying: boolean; jumpOptions?: DanmakuJumpOption[] } | null = null;
   private skipBusy = false;
   private loadToken = 0;
   private refreshing = false;
@@ -112,7 +114,6 @@ class AdSkipper {
       aiStatus: this.settings.aiEnabled ? "等待分析" : "未启用",
       ...(this.settings.danmakuJumpEnabled ? {} : { jumpCandidates: [] })
     });
-    this.cancelPrompt(true);
     this.ignored.clear();
     this.segments = [];
     this.aiSegments = [];
@@ -208,7 +209,6 @@ class AdSkipper {
   }
 
   private resetPlaybackState(): void {
-    this.cancelPrompt(false);
     this.ignored.clear();
     this.bundle = null;
     this.segments = [];
@@ -266,7 +266,7 @@ class AdSkipper {
         aid: ref.aid,
         page: ref.page,
         keywords: this.settings.keywords,
-        includeCommentEvidence: this.settings.showCommentEvidence
+        includeCommentEvidence: false
       });
       if (token !== this.loadToken || this.key !== videoKey(ref)) return;
       if (!("ok" in response) || !response.ok) {
@@ -338,7 +338,11 @@ class AdSkipper {
     }
     const mediaDuration = this.video && Number.isFinite(this.video.duration) ? this.video.duration * 1000 : this.bundle.durationMs;
     const heuristic = buildSegments(this.bundle.cues, this.settings.keywords, this.settings, mediaDuration);
-    this.segments = mergeSegmentList([...heuristic, ...this.aiSegments]);
+    const ruleSegments = buildRuleSegments(this.bundle.cues, this.settings.customRules, {
+      mergeGapMs: this.settings.mergeGapSeconds * 1000,
+      durationMs: mediaDuration
+    });
+    this.segments = mergeSegmentList([...heuristic, ...ruleSegments, ...this.aiSegments]);
   }
 
   private async runAiAnalysis(token: number): Promise<void> {
@@ -461,71 +465,36 @@ class AdSkipper {
   }
 
   private findActiveSegment(nowMs: number): Segment | null {
-    return this.segments.find((segment) =>
-      !this.ignored.has(segment.id) && nowMs >= segment.startMs && nowMs < segment.endMs - 100
-    ) ?? null;
+    return this.segments.find((segment) => !this.ignored.has(segment.id) && isInsideSegment(segment, nowMs)) ?? null;
   }
 
-  private groupDanmakuOptions(candidates: DanmakuJumpHint[]): DanmakuJumpOption[] {
-    if (candidates.length === 0) return [];
-    const buckets = new Map<number, DanmakuJumpHint[]>();
-    for (const hint of candidates) {
-      const key = Math.round(hint.targetMs / 2_000);
-      const bucket = buckets.get(key) ?? [];
-      bucket.push(hint);
-      buckets.set(key, bucket);
+  private findDanmakuJumpOptions(segment: Segment | null, nowMs: number): JumpOption[] {
+    if (!this.settings.danmakuJumpEnabled || this.danmakuHints.length === 0) return [];
+    const durationMs = this.videoDurationMs();
+    if (!segment) {
+      return groupDanmakuOptions(
+        selectNearbyJumpHints({
+          hints: this.danmakuHints,
+          handledIds: this.handledDanmakuHints,
+          nowMs,
+          durationMs
+        })
+      ).filter(isTrustworthyJumpOption);
     }
-    const ranked = Array.from(buckets.values()).map((bucket) => {
-      const explicitCount = bucket.filter((hint) => hint.explicit).length;
-      const chineseCount = bucket.filter((hint) => hint.kind === "chinese-digits").length;
-      const latest = Math.max(...bucket.map((hint) => hint.atMs));
-      const targetCounts = new Map<number, DanmakuJumpHint[]>();
-      for (const hint of bucket) {
-        const target = Math.round(hint.targetMs / 1_000) * 1_000;
-        targetCounts.set(target, [...(targetCounts.get(target) ?? []), hint]);
-      }
-      const representativeGroup = Array.from(targetCounts.values()).sort((a, b) =>
-        b.filter((hint) => hint.explicit).length - a.filter((hint) => hint.explicit).length || b.length - a.length
-      )[0] ?? bucket;
-      const hint = [...representativeGroup].sort((a, b) =>
-        Number(b.explicit) - Number(a.explicit) || b.atMs - a.atMs
-      )[0] ?? bucket[0]!;
-      const samples = Array.from(new Set(bucket.map((item) => item.text))).slice(0, 3);
-      return {
-        bucket,
-        representativeGroup,
-        hint,
-        samples,
-        targetMs: hint.targetMs,
-        explicitCount,
-        chineseCount,
-        latest
-      };
-    }).sort((a, b) =>
-        (b.explicitCount * 100 + b.chineseCount * 5 + b.bucket.length * 10 + b.latest / 1_000_000) -
-        (a.explicitCount * 100 + a.chineseCount * 5 + a.bucket.length * 10 + a.latest / 1_000_000)
-      ).slice(0, 10);
-    return ranked.map((item) => ({
-      targetMs: item.targetMs,
-      hint: item.hint,
-      cluster: item.bucket,
-      samples: item.samples
-    }));
+    return groupDanmakuOptions(
+      selectJumpHintsForSegment({
+        hints: this.danmakuHints,
+        handledIds: this.handledDanmakuHints,
+        segment,
+        nowMs,
+        durationMs
+      })
+    );
   }
 
-  private findDanmakuJumpOptions(segment: Segment, nowMs: number): DanmakuJumpOption[] {
-    if (!this.settings.danmakuJumpEnabled) return [];
+  private videoDurationMs(): number {
     const video = this.video;
-    if (!video || this.danmakuHints.length === 0) return [];
-    const durationMs = Number.isFinite(video.duration) ? video.duration * 1000 : this.bundle?.durationMs ?? Number.POSITIVE_INFINITY;
-    const fromMs = Math.max(0, segment.startMs - 120_000);
-    const toMs = segment.endMs + 10_000;
-    const minimumTarget = Math.max(nowMs + 2_000, segment.endMs + 500);
-    return this.groupDanmakuOptions(this.danmakuHints.filter((hint) =>
-      !this.handledDanmakuHints.has(hint.id) &&
-      hint.atMs >= fromMs && hint.atMs <= toMs &&
-      hint.targetMs > minimumTarget && hint.targetMs < durationMs - 300
-    ));
+    return video && Number.isFinite(video.duration) ? video.duration * 1000 : this.bundle?.durationMs ?? Number.POSITIVE_INFINITY;
   }
 
   private updatePanelJumpCandidates(): number {
@@ -534,90 +503,37 @@ class AdSkipper {
       this.floatingPanel.update({ jumpCandidates: [] });
       return 0;
     }
-    const nowMs = video.currentTime * 1000;
-    const durationMs = Number.isFinite(video.duration) ? video.duration * 1000 : this.bundle?.durationMs ?? Number.POSITIVE_INFINITY;
-    const options = this.groupDanmakuOptions(this.danmakuHints);
-    const candidates = options.map((option, index) => ({
-      targetMs: option.targetMs,
-      count: option.cluster.length,
-      samples: option.samples,
-      status: option.targetMs <= nowMs + 2_000 ? "past" as const
-        : option.targetMs >= durationMs - 300 ? "beyond" as const
-          : "available" as const,
-      order: index
-    })).sort((a, b) => {
-      const rank = (status: "available" | "past" | "beyond"): number => status === "available" ? 0 : status === "past" ? 1 : 2;
-      return rank(a.status) - rank(b.status) || a.order - b.order;
-    }).slice(0, 10);
-    this.floatingPanel.update({
-      jumpCandidates: candidates.map(({ order: _order, ...candidate }) => candidate)
-    });
+    const candidates = buildJumpCandidates(groupDanmakuOptions(this.danmakuHints), video.currentTime * 1000, this.videoDurationMs());
+    this.floatingPanel.update({ jumpCandidates: candidates });
     return candidates.length;
   }
 
   private async checkPlayback(): Promise<void> {
     const video = this.video;
-    if (!video || this.skipBusy || this.activePrompt || video.paused || video.ended) return;
+    if (!video || this.skipBusy || video.paused || video.ended) return;
     const nowMs = video.currentTime * 1000;
     if (this.settings.danmakuJumpEnabled && Math.floor(nowMs / 2_000) !== this.lastJumpPanelUpdate) {
       this.lastJumpPanelUpdate = Math.floor(nowMs / 2_000);
       this.updatePanelJumpCandidates();
     }
     const segment = this.findActiveSegment(nowMs);
-    if (!segment) return;
     const jumpOptions = this.findDanmakuJumpOptions(segment, nowMs);
-
     if (jumpOptions.length > 0) {
       for (const option of jumpOptions) {
         for (const hint of option.cluster) this.handledDanmakuHints.add(hint.id);
       }
       this.updatePanelJumpCandidates();
-      const defaultJump = jumpOptions[0]!;
-      this.activePrompt = { segment, wasPlaying: true, jumpOptions };
-      video.pause();
-      this.floatingPanel.update({
-        statusTitle: "检测到空降时间",
-        statusDetail: `${jumpOptions.length} 个未来目标，推荐 ${formatClock(defaultJump.targetMs)}`,
-        statusTone: "warn"
-      });
-      this.floatingPanel.log("warn", `弹幕空降候选：${jumpOptions.map((option) => formatClock(option.targetMs)).join("、")}`);
-      const view: JumpOptionView[] = jumpOptions.map((option) => ({
-        targetMs: option.targetMs,
-        count: option.cluster.length,
-        samples: option.samples
-      }));
-      this.ui.showJumpPrompt(view, {
-        onJump: (index) => { void this.performDanmakuJump(index); },
-        onContinue: () => { this.continueWatching(); },
-        onOpenOptions: () => { void this.openOptions(); }
-      });
+      await this.performDanmakuJump(jumpOptions[0]!);
       return;
     }
-
     if (!segment) return;
-
-    if (this.settings.confirmBeforeSkip) {
-      this.activePrompt = { segment, wasPlaying: true };
-      video.pause();
-      this.floatingPanel.update({ statusTitle: "发现广告，等待确认", statusDetail: "已暂停播放，请在页面提示中选择。", statusTone: "warn" });
-      this.floatingPanel.log("warn", `检测到广告片段 ${Math.round(segment.startMs / 1000)}–${Math.round(segment.endMs / 1000)} 秒`);
-      const evidence = this.settings.showCommentEvidence ? this.bundle?.commentEvidence ?? null : null;
-      this.ui.showPrompt(segment, evidence, {
-        onSkip: () => { void this.performSkip(segment, true); },
-        onContinue: () => { this.continueWatching(); },
-        onOpenOptions: () => { void this.openOptions(); }
-      });
-    } else {
-      await this.performSkip(segment, true);
-    }
+    await this.performSkip(segment, true);
   }
 
   private async performSkip(segment: Segment, wasPlaying: boolean): Promise<void> {
     const video = this.video;
     if (!video || this.skipBusy) return;
     this.skipBusy = true;
-    this.ui.hidePrompt();
-    this.activePrompt = null;
     this.ignored.add(segment.id);
     const previousSeconds = video.currentTime;
     const targetSeconds = Math.min(video.duration || Number.POSITIVE_INFINITY, segment.endMs / 1000);
@@ -632,82 +548,56 @@ class AdSkipper {
       }
       if (wasPlaying) await video.play().catch(() => undefined);
       const skippedSeconds = Math.max(1, Math.round(video.currentTime - previousSeconds));
-      this.floatingPanel.update({ statusTitle: `已跳过约 ${skippedSeconds} 秒`, statusDetail: "可点击页面底部提示撤销。", statusTone: "ok" });
-      this.floatingPanel.log("success", `已跳过约 ${skippedSeconds} 秒广告片段`);
-      this.ui.showToast(`已跳过约 ${skippedSeconds} 秒广告片段`, () => this.undoSkip(previousSeconds, wasPlaying, segment));
+      const source = segment.ruleName
+        ? `自定义规则「${segment.ruleName}」`
+        : segment.aiConfidence != null
+          ? "AI 识别"
+          : segment.matchedKeywords.length > 0
+            ? `产品词 ${segment.matchedKeywords.join("、")}`
+            : "商单语境";
+      this.floatingPanel.update({ statusTitle: `已跳过约 ${skippedSeconds} 秒`, statusDetail: `来源：${source}。点击底部“回到跳转前”可恢复播放。`, statusTone: "ok" });
+      this.floatingPanel.log("success", `已跳过约 ${skippedSeconds} 秒广告片段（${source}）`);
+      this.ui.showToast(`已跳过约 ${skippedSeconds} 秒广告片段`, () => this.undoJump(previousSeconds, wasPlaying, segment.id));
     } finally {
       this.skipBusy = false;
     }
   }
 
-  private async performDanmakuJump(optionIndex = 0): Promise<void> {
-    const active = this.activePrompt;
+  private async performDanmakuJump(option: JumpOption): Promise<void> {
     const video = this.video;
-    const option = active?.jumpOptions?.[optionIndex] ?? active?.jumpOptions?.[0];
-    const hint = option?.hint;
-    if (!active || !video || !hint || this.skipBusy) return;
+    const hint = option.hint;
+    if (!video || this.skipBusy) return;
     const nowMs = video.currentTime * 1000;
-    const durationMs = Number.isFinite(video.duration) ? video.duration * 1000 : this.bundle?.durationMs ?? Number.POSITIVE_INFINITY;
-    if (hint.targetMs <= nowMs + 500 || hint.targetMs >= durationMs - 300) {
-      this.activePrompt = null;
-      this.ignored.add(active.segment.id);
-      this.ui.hidePrompt();
-      this.floatingPanel.update({ statusTitle: "空降目标已过时", statusDetail: "目标时间必须晚于当前播放位置。", statusTone: "warn" });
-      this.floatingPanel.log("warn", `忽略无效空降目标 ${formatClock(hint.targetMs)}`);
-      if (active.wasPlaying) void video.play().catch(() => undefined);
-      return;
-    }
-
+    if (hint.targetMs <= nowMs + 500 || hint.targetMs >= this.videoDurationMs() - 300) return;
+    const wasPlaying = !video.paused;
+    const targetId = `danmaku:${hint.id}`;
     this.skipBusy = true;
-    this.ui.hidePrompt();
-    this.activePrompt = null;
-    this.ignored.add(active.segment.id);
+    this.ignored.add(targetId);
     const previousSeconds = video.currentTime;
     try {
       video.currentTime = hint.targetMs / 1000;
-      if (active.wasPlaying) await video.play().catch(() => undefined);
+      if (wasPlaying) await video.play().catch(() => undefined);
       this.floatingPanel.update({
         statusTitle: `已空降到 ${formatClock(hint.targetMs)}`,
         statusDetail: `来源弹幕：${hint.text}`,
         statusTone: "ok"
       });
-      this.floatingPanel.log("success", `已空降到 ${formatClock(hint.targetMs)}`);
-      this.ui.showToast(`已空降到 ${formatClock(hint.targetMs)}`, () =>
-        this.undoSkip(previousSeconds, active.wasPlaying, active.segment)
-      );
+      this.floatingPanel.log("success", `已空降到 ${formatClock(hint.targetMs)}（${hint.text}）`);
+      this.ui.showToast(`已空降到 ${formatClock(hint.targetMs)}`, () => this.undoJump(previousSeconds, wasPlaying, targetId));
     } finally {
       this.skipBusy = false;
     }
   }
 
-  private undoSkip(previousSeconds: number, wasPlaying: boolean, segment: Segment): void {
+  private undoJump(previousSeconds: number, wasPlaying: boolean, id: string): void {
     const video = this.video;
     if (!video) return;
-    this.ignored.add(segment.id);
+    this.ignored.add(id);
     video.currentTime = previousSeconds;
     if (wasPlaying) void video.play().catch(() => undefined);
-    this.floatingPanel.update({ statusTitle: "已撤销跳转", statusDetail: "该片段本次不会再次提示。", statusTone: "warn" });
-    this.floatingPanel.log("warn", "已撤销跳转");
-    this.ui.showStatus("已撤销跳转。这个片段在本次观看中不会再次自动提示。");
-  }
-
-  private continueWatching(): void {
-    const active = this.activePrompt;
-    if (!active) return;
-    this.ignored.add(active.segment.id);
-    this.activePrompt = null;
-    this.ui.hidePrompt();
-    this.floatingPanel.update({ statusTitle: "已选择继续观看", statusDetail: "该片段本次不再提示。", statusTone: "info" });
-    this.floatingPanel.log("info", "继续观看广告片段");
-    if (active.wasPlaying && this.video) void this.video.play().catch(() => undefined);
-  }
-
-  private cancelPrompt(restorePlayback: boolean): void {
-    if (!this.activePrompt) return;
-    const wasPlaying = this.activePrompt.wasPlaying;
-    this.activePrompt = null;
-    this.ui.hidePrompt();
-    if (restorePlayback && wasPlaying && this.video) void this.video.play().catch(() => undefined);
+    this.floatingPanel.update({ statusTitle: "已回到跳转前", statusDetail: "这一次跳过已忽略，不会立刻再次触发。", statusTone: "warn" });
+    this.floatingPanel.log("warn", "已回到跳转前");
+    this.ui.showStatus("已回到跳转前。这个片段本次不会再次自动跳过。");
   }
 
   private openOptions(): void {

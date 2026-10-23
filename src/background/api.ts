@@ -1,3 +1,4 @@
+import { BoundedMap } from "../core/cache";
 import { matchedKeywords } from "../core/segments";
 import type { Cue, PinnedCommentEvidence, SubtitleBundle } from "../core/types";
 
@@ -54,8 +55,8 @@ export class BiliApiError extends Error {
   }
 }
 
-const baseCache = new Map<string, BaseBundle>();
-const pageCache = new Map<string, number>();
+const baseCache = new BoundedMap<string, BaseBundle>(32);
+const pageCache = new BoundedMap<string, number>(64);
 
 export async function resolveVideoCid(request: { bvid?: string; aid?: number; page: number }): Promise<number> {
   if (!request.bvid && !request.aid) throw new BiliApiError("video_not_found", "缺少视频编号，无法读取弹幕");

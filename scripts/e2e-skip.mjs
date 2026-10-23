@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 const edgePath = process.env.EDGE_PATH || "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const extensionPath = resolve("dist");
 const profileDir = resolve(".tmp-e2e-skip-profile");
-await rm(profileDir, { recursive: true, force: true });
+await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
 await mkdir(profileDir, { recursive: true });
 
 const context = await chromium.launchPersistentContext(profileDir, {
@@ -33,11 +33,32 @@ try {
     endpoint: document.querySelector("#ai-endpoint")?.value,
     model: document.querySelector("#ai-model")?.value
   }));
+  await optionsPage.locator("#rules-json").fill(JSON.stringify({
+    rules: [{ name: "E2E 规则", keywords: ["ACEMAGIC"], required: ["优惠码"], minHits: 2, action: "skip" }]
+  }));
+  await optionsPage.locator("#rules-apply").click();
+  await optionsPage.waitForFunction(() => document.querySelector("#rules-status")?.textContent?.includes("导入 1 条规则"));
+  const rulesUi = await optionsPage.evaluate(() => ({
+    count: document.querySelector("#rules-count")?.textContent,
+    rows: document.querySelectorAll("#rules-list .rule-row").length,
+    status: document.querySelector("#rules-status")?.textContent
+  }));
+  await optionsPage.locator("button[type='submit']").click();
+  await optionsPage.waitForFunction(() => document.querySelector("#save-status")?.textContent?.includes("已保存"));
+  const storedRules = await optionsPage.evaluate(async () => {
+    const value = await chrome.storage.local.get("settings");
+    return value.settings?.customRules;
+  });
+  if (!Array.isArray(storedRules) || storedRules.length !== 1 || storedRules[0]?.name !== "E2E 规则") {
+    throw new Error(`自定义规则未正确保存：${JSON.stringify(storedRules)}`);
+  }
+  if (rulesUi.rows !== 1 || !rulesUi.status?.includes("导入 1 条规则")) {
+    throw new Error(`自定义规则界面状态异常：${JSON.stringify(rulesUi)}`);
+  }
   await optionsPage.evaluate(async () => {
     await chrome.storage.local.set({ settings: {
       keywords: ["ACEMAGIC", "优惠码"],
       confirmBeforeSkip: false,
-      showCommentEvidence: true,
       mergeGapSeconds: 8,
       beforeBufferSeconds: 1,
       afterBufferSeconds: 2
@@ -132,9 +153,39 @@ try {
     status: 200, contentType: "application/json", body: JSON.stringify({ code: 0, data: { top_replies: [{ rpid: 9, content: { message: "本期由 ACEMAGIC 赞助" }, member: { uname: "UP主" } }] } })
   }));
 
+async function panelSubtitleState(page) {
+  const frame = page.frames().find((item) => item.url().includes("/floating.html"));
+  if (!frame) return "unknown";
+  const state = await frame
+    .evaluate(() => ({
+      title: document.querySelector("#status-title")?.textContent ?? "",
+      detail: document.querySelector("#status-detail")?.textContent ?? ""
+    }))
+    .catch(() => ({ title: "", detail: "" }));
+  if (state.title.includes("失败")) return "failed";
+  if (state.title.includes("扫描") || state.title.includes("字幕已就绪")) return "ready";
+  return "pending";
+}
+
+async function loadVideoPage(page, url) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector("#bili-ad-skipper-root");
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      const state = await panelSubtitleState(page);
+      if (state === "ready") return;
+      if (state === "failed") break;
+      await page.waitForTimeout(400);
+    }
+    console.log(`字幕接口未命中（第 ${attempt} 次），重新加载页面`);
+  }
+  throw new Error("B 站字幕接口始终未返回可用数据，e2e mock 可能未生效");
+}
+
   const page = await context.newPage();
-  await page.goto("https://www.bilibili.com/video/BV1Test0001/", { waitUntil: "domcontentloaded" });
-  await page.waitForSelector("#bili-ad-skipper-root");
+  page.on("pageerror", (error) => console.log("PAGE_EXCEPTION", error.message));
+  await loadVideoPage(page, "https://www.bilibili.com/video/BV1Test0001/");
   await page.waitForSelector("#bili-ad-skipper-floating");
   await page.waitForTimeout(700);
   const floatingFrame = page.frames().find((frame) => frame.url().includes("/floating.html"));
@@ -159,58 +210,6 @@ try {
     const iframe = host?.shadowRoot?.querySelector("iframe");
     return { width: iframe?.getBoundingClientRect().width, height: iframe?.getBoundingClientRect().height };
   });
-  await page.waitForFunction(() => document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".status")?.classList.contains("hidden"));
-  await page.evaluate(() => { const v = document.querySelector("video"); v.currentTime = 0.9; return v.play().catch(() => undefined); });
-  await page.waitForFunction(() => document.querySelector("video")?.currentTime >= 5.9, undefined, { timeout: 10_000 });
-  const autoSkip = await page.evaluate(() => ({
-    time: document.querySelector("video")?.currentTime,
-    toast: document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".toast")?.textContent
-  }));
-  await page.evaluate(() => document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector('[data-action="undo"]')?.click());
-  await page.waitForFunction(() => (document.querySelector("video")?.currentTime ?? 99) < 1.5);
-  const undoTime = await page.evaluate(() => document.querySelector("video")?.currentTime);
-
-  await worker.evaluate(async () => {
-    const result = await chrome.storage.local.get("settings");
-    await chrome.storage.local.set({ settings: { ...result.settings, confirmBeforeSkip: true } });
-  });
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForSelector("#bili-ad-skipper-root");
-  await page.evaluate(() => { const v = document.querySelector("video"); v.currentTime = 0.9; return v.play().catch(() => undefined); });
-  await page.waitForFunction(() => {
-    const panel = document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".panel");
-    return panel && !panel.classList.contains("hidden");
-  }, undefined, { timeout: 10_000 });
-  const prompt = await page.evaluate(() => ({
-    paused: document.querySelector("video")?.paused,
-    text: document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".panel")?.textContent
-  }));
-  await page.evaluate(() => document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector('[data-action="skip"]')?.click());
-  await page.waitForFunction(() => document.querySelector("video")?.currentTime >= 5.9, undefined, { timeout: 10_000 });
-  const confirmedSkipTime = await page.evaluate(() => document.querySelector("video")?.currentTime);
-
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForSelector("#bili-ad-skipper-root");
-  await page.evaluate(() => { const v = document.querySelector("video"); v.currentTime = 0.9; return v.play().catch(() => undefined); });
-  await page.waitForFunction(() => {
-    const panel = document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".panel");
-    return panel && !panel.classList.contains("hidden");
-  }, undefined, { timeout: 10_000 });
-  await page.evaluate(() => document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector('[data-action="continue"]')?.click());
-  await page.waitForFunction(() => (document.querySelector("video")?.currentTime ?? 0) > 2.4, undefined, { timeout: 10_000 });
-  const continued = await page.evaluate(() => ({
-    time: document.querySelector("video")?.currentTime,
-    panelHidden: document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".panel")?.classList.contains("hidden")
-  }));
-
-  await page.evaluate(() => history.pushState({}, "", "/video/BV1Test0001/?p=2"));
-  await page.waitForTimeout(1_600);
-  await page.evaluate(() => { const v = document.querySelector("video"); v.currentTime = 9.5; return v.play().catch(() => undefined); });
-  await page.waitForFunction(() => {
-    const panel = document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".panel");
-    return panel && !panel.classList.contains("hidden") && panel.textContent?.includes("P2 的 ACEMAGIC 广告");
-  }, undefined, { timeout: 10_000 });
-  const pageSwitchPrompt = await page.evaluate(() => document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".panel")?.textContent);
   await page.waitForFunction(() => {
     const notice = document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".companion");
     return notice && !notice.classList.contains("hidden");
@@ -223,6 +222,26 @@ try {
     };
   });
 
+  await page.waitForFunction(() => document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".status")?.classList.contains("hidden"));
+  await page.evaluate(() => { const v = document.querySelector("video"); v.currentTime = 0.9; return v.play().catch(() => undefined); });
+  await page.waitForFunction(() => document.querySelector("video")?.currentTime >= 5.9, undefined, { timeout: 10_000 });
+  const autoSkip = await page.evaluate(() => ({
+    time: document.querySelector("video")?.currentTime,
+    paused: document.querySelector("video")?.paused,
+    toast: document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".toast")?.textContent
+  }));
+  await page.evaluate(() => document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector('[data-action="undo"]')?.click());
+  await page.waitForFunction(() => (document.querySelector("video")?.currentTime ?? 99) < 1.5);
+  const undoTime = await page.evaluate(() => document.querySelector("video")?.currentTime);
+
+  await page.evaluate(() => history.pushState({}, "", "/video/BV1Test0001/?p=2"));
+  await page.waitForTimeout(1_600);
+  await page.evaluate(() => { const v = document.querySelector("video"); v.currentTime = 9.5; return v.play().catch(() => undefined); });
+  await page.waitForFunction(() => (document.querySelector("video")?.currentTime ?? 0) >= 15.5, undefined, { timeout: 10_000 });
+  const pageSwitchSkip = await page.evaluate(() => ({
+    time: document.querySelector("video")?.currentTime,
+    toast: document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".toast")?.textContent
+  }));
   await worker.evaluate(async () => {
     const result = await chrome.storage.local.get("settings");
     await chrome.storage.local.set({ settings: { ...result.settings, keywords: [], detectContextAds: true } });
@@ -237,10 +256,13 @@ try {
   console.log("GENERIC_LOAD_STATE", JSON.stringify(genericLoadState));
   await page.evaluate(() => { const v = document.querySelector("video"); v.currentTime = 1.2; return v.play().catch(() => undefined); });
   await page.waitForFunction(() => {
-    const panel = document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".panel");
-    return panel && !panel.classList.contains("hidden") && panel.textContent?.includes("检测到疑似商单片段");
+    const toast = document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".toast");
+    return toast && !toast.classList.contains("hidden") && toast.textContent?.includes("已跳过");
   }, undefined, { timeout: 10_000 });
-  const genericPrompt = await page.evaluate(() => document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".panel")?.textContent);
+  const genericSkip = await page.evaluate(() => ({
+    time: document.querySelector("video")?.currentTime,
+    toast: document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".toast")?.textContent
+  }));
 
   await worker.evaluate(async () => {
     const result = await chrome.storage.local.get("settings");
@@ -263,10 +285,13 @@ try {
   }, undefined, { timeout: 15_000 });
   await page.evaluate(() => { const v = document.querySelector("video"); v.currentTime = 1.2; return v.play().catch(() => undefined); });
   await page.waitForFunction(() => {
-    const panel = document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".panel");
-    return panel && !panel.classList.contains("hidden") && panel.textContent?.includes("AI 识别到疑似广告片段");
+    const toast = document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".toast");
+    return toast && !toast.classList.contains("hidden") && toast.textContent?.includes("已跳过");
   }, undefined, { timeout: 10_000 });
-  const aiPrompt = await page.evaluate(() => document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".panel")?.textContent);
+  const aiSkip = await page.evaluate(() => ({
+    time: document.querySelector("video")?.currentTime,
+    toast: document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".toast")?.textContent
+  }));
 
   await worker.evaluate(async () => {
     const result = await chrome.storage.local.get("settings");
@@ -275,8 +300,7 @@ try {
       keywords: [],
       detectContextAds: false,
       aiEnabled: false,
-      danmakuJumpEnabled: true,
-      confirmBeforeSkip: false
+      danmakuJumpEnabled: true
     } });
   });
   await page.goto("https://www.bilibili.com/video/BV1Test0001/?p=4", { waitUntil: "domcontentloaded" });
@@ -289,27 +313,12 @@ try {
   await p4Frame.waitForSelector("#jump-candidates-card", { state: "visible" });
   const danmakuPanelCandidates = await p4Frame.evaluate(() => document.querySelector("#jump-candidates")?.textContent);
   await page.evaluate(() => { const v = document.querySelector("video"); v.currentTime = 0.5; return v.play().catch(() => undefined); });
-  await page.waitForTimeout(2_500);
-  const danmakuWithoutAdPromptVisible = await page.evaluate(() => {
-    const panel = document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".panel");
-    return Boolean(panel && !panel.classList.contains("hidden"));
-  });
-  await worker.evaluate(async () => {
-    const result = await chrome.storage.local.get("settings");
-    await chrome.storage.local.set({ settings: { ...result.settings, keywords: ["测试广告"] } });
-  });
-  await page.goto("https://www.bilibili.com/video/BV1Test0001/?p=4", { waitUntil: "domcontentloaded" });
-  await page.waitForSelector("#bili-ad-skipper-root");
-  await page.waitForTimeout(2_200);
-  await page.evaluate(() => { const v = document.querySelector("video"); v.currentTime = 0.5; return v.play().catch(() => undefined); });
-  await page.waitForFunction(() => {
-    const panel = document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".panel");
-    return panel && !panel.classList.contains("hidden") && panel.textContent?.includes("检测到空降时间");
-  }, undefined, { timeout: 10_000 });
-  const danmakuPrompt = await page.evaluate(() => document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".panel")?.textContent);
-  await page.evaluate(() => document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector('[data-jump-option="1"]')?.click());
-  await page.waitForFunction(() => (document.querySelector("video")?.currentTime ?? 0) >= 15.5, undefined, { timeout: 10_000 });
-  const danmakuJumpTime = await page.evaluate(() => document.querySelector("video")?.currentTime);
+  await page.waitForFunction(() => (document.querySelector("video")?.currentTime ?? 0) >= 13.5, undefined, { timeout: 10_000 });
+  const danmakuPriorityJump = await page.evaluate(() => ({
+    time: document.querySelector("video")?.currentTime,
+    paused: document.querySelector("video")?.paused,
+    toast: document.querySelector("#bili-ad-skipper-root")?.shadowRoot?.querySelector(".toast")?.textContent
+  }));
 
   await page.goto("https://www.bilibili.com/", { waitUntil: "domcontentloaded" });
   await page.waitForSelector("#bili-ad-skipper-floating");
@@ -322,8 +331,10 @@ try {
     collapsed: document.body.classList.contains("is-collapsed")
   }));
 
-  console.log(JSON.stringify({ aiPreset, aiRequestFormat, floatingInitial, floatingCompact, floatingExpanded, homepagePanel, playerRequests, aiRequests, autoSkip, undoTime, prompt, confirmedSkipTime, continued, pageSwitchPrompt, companionNotice, genericLoadState, genericPrompt, aiPrompt, danmakuPanelCandidates, danmakuWithoutAdPromptVisible, danmakuPrompt, danmakuJumpTime }, null, 2));
+  console.log(JSON.stringify({ aiPreset, rulesUi, storedRules, aiRequestFormat, floatingInitial, floatingCompact, floatingExpanded, homepagePanel, playerRequests, aiRequests, autoSkip, undoTime, pageSwitchSkip, companionNotice, genericLoadState, genericSkip, aiSkip, danmakuPanelCandidates, danmakuPriorityJump }, null, 2));
 } finally {
   await context.close();
-  await rm(profileDir, { recursive: true, force: true });
+  await rm(profileDir, { recursive: true, force: true }).catch((error) => {
+    console.warn(`清理临时目录失败（不影响测试结果）：${error instanceof Error ? error.message : error}`);
+  });
 }

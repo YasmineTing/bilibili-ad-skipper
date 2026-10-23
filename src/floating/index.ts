@@ -1,3 +1,4 @@
+import type { CustomRule } from "../core/rules";
 import {
   loadSettings,
   normalizeKeywords,
@@ -68,12 +69,12 @@ const jumpCandidatesList = must<HTMLElement>("#jump-candidates");
 const logList = must<HTMLElement>("#log-list");
 const saveMessage = must<HTMLElement>("#save-message");
 const saveButton = must<HTMLButtonElement>("#save-settings");
+const rulesCount = must<HTMLElement>("#rules-count");
+const manageRulesButton = must<HTMLButtonElement>("#manage-rules");
 
 const keywordsInput = must<HTMLTextAreaElement>("#keywords");
-const confirmInput = must<HTMLInputElement>("#confirm-skip");
 const contextInput = must<HTMLInputElement>("#context-ads");
 const danmakuInput = must<HTMLInputElement>("#danmaku-jump");
-const commentInput = must<HTMLInputElement>("#comment-evidence");
 const mergeGapInput = must<HTMLInputElement>("#merge-gap");
 const beforeBufferInput = must<HTMLInputElement>("#before-buffer");
 const afterBufferInput = must<HTMLInputElement>("#after-buffer");
@@ -96,6 +97,8 @@ let currentState: PanelState = {
   logs: [],
   collapsed: true
 };
+
+let customRules: CustomRule[] = [];
 
 function setCollapsed(collapsed: boolean): void {
   document.body.classList.toggle("is-collapsed", collapsed);
@@ -198,10 +201,10 @@ function renderState(state: PanelState): void {
 
 function renderSettings(settings: Settings): void {
   keywordsInput.value = settings.keywords.join("\n");
-  confirmInput.checked = settings.confirmBeforeSkip;
+  customRules = settings.customRules;
+  rulesCount.textContent = `${customRules.length} 条`;
   contextInput.checked = settings.detectContextAds;
   danmakuInput.checked = settings.danmakuJumpEnabled;
-  commentInput.checked = settings.showCommentEvidence;
   mergeGapInput.value = String(settings.mergeGapSeconds);
   beforeBufferInput.value = String(settings.beforeBufferSeconds);
   afterBufferInput.value = String(settings.afterBufferSeconds);
@@ -216,8 +219,6 @@ function renderSettings(settings: Settings): void {
 function collectSettings(): Settings {
   return {
     keywords: normalizeKeywords(keywordsInput.value.split(/\r?\n/)),
-    confirmBeforeSkip: confirmInput.checked,
-    showCommentEvidence: commentInput.checked,
     detectContextAds: contextInput.checked,
     danmakuJumpEnabled: danmakuInput.checked,
     mergeGapSeconds: Number(mergeGapInput.value),
@@ -228,7 +229,8 @@ function collectSettings(): Settings {
     aiEndpoint: aiEndpointInput.value,
     aiModel: aiModelInput.value,
     aiApiKey: aiApiKeyInput.value,
-    aiMinConfidence: Number(aiConfidenceInput.value)
+    aiMinConfidence: Number(aiConfidenceInput.value),
+    customRules: customRules.map((rule) => ({ ...rule }))
   };
 }
 
@@ -275,6 +277,10 @@ saveButton.addEventListener("click", async () => {
   } finally {
     saveButton.disabled = false;
   }
+});
+
+manageRulesButton.addEventListener("click", () => {
+  void chrome.tabs.create({ url: chrome.runtime.getURL("options.html") });
 });
 
 window.addEventListener("message", (event) => {

@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "name": "示例规则包",
+  "rules": [
+    {
+      "name": "3C 数码商单",
+      "keywords": ["官方旗舰店", "到手价", "以旧换新"],
+      "required": ["优惠券", "下单"],
+      "exclude": ["抽奖"],
+      "pattern": "",
+      "minHits": 2,
+      "beforeSeconds": 1,
+      "afterSeconds": 2
+    },
+    {
+      "name": "英文口播赞助",
+      "keywords": [],
+      "pattern": "sponsored\\s+by",
+      "minHits": 1,
+      "beforeSeconds": 0.5,
+      "afterSeconds": 1.5
+    }
+  ]
+}

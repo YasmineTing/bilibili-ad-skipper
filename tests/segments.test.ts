@@ -4,6 +4,7 @@ import { parseVideoRef, videoKey } from "../src/content/bilibili";
 import { DEFAULT_SETTINGS, normalizeKeywords, sanitizeSettings } from "../src/settings";
 import type { Settings } from "../src/settings";
 import type { Cue } from "../src/core/types";
+import type { CustomRule } from "../src/core/rules";
 
 const settings: Settings = {
   ...DEFAULT_SETTINGS,
@@ -40,6 +41,19 @@ describe("keyword normalization", () => {
     expect(result.aiEndpoint).toBe("https://api.deepseek.com/v1");
     expect(result.aiModel).toBe("deepseek-chat");
     expect(sanitizeSettings({ detectContextAds: false }).detectContextAds).toBe(false);
+    expect(result.customRules).toEqual([]);
+  });
+
+  it("keeps valid custom rules and drops broken ones", () => {
+    const result = sanitizeSettings({
+      customRules: [
+        { name: "电商商单", keywords: ["旗舰店"] },
+        { name: "坏正则", pattern: "(" }
+      ] as unknown as CustomRule[]
+    });
+    expect(result.customRules).toHaveLength(1);
+    expect(result.customRules[0]?.name).toBe("电商商单");
+    expect(sanitizeSettings(undefined).customRules).toEqual([]);
   });
 });
 

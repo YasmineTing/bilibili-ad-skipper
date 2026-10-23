@@ -3,9 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>B站广告跳过悬浮窗</title>
+    <title>B站广告跳过悬浮窗</title>
     <script type="module" crossorigin src="/assets/floating.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/settings-CF0X6tpM.js">
+    <link rel="modulepreload" crossorigin href="/assets/settings-Dlq_a-TC.js">
     <link rel="stylesheet" crossorigin href="/assets/floating.css">
   </head>
   <body class="is-collapsed">
@@ -56,7 +56,7 @@
             <div class="tip-title">使用说明</div>
             <ul>
               <li>打开 B 站视频后等待字幕加载。</li>
-              <li>命中广告时会按设置暂停询问或直接跳过。</li>
+              <li>命中广告时直接跳转，底部可点“回到跳转前”。</li>
               <li>可在“设置”和“AI”中调整词库与模型。</li>
             </ul>
           </div>
@@ -67,10 +67,12 @@
             <span>产品词库</span>
             <textarea id="keywords" rows="6" spellcheck="false" placeholder="每行一个产品词"></textarea>
           </label>
-          <label class="check-row"><input id="confirm-skip" type="checkbox" /><span>跳过前暂停并确认</span></label>
+          <div class="rules-summary">
+            <div class="rules-summary-copy"><span>自定义识别规则</span><strong id="rules-count">0 条</strong></div>
+            <button id="manage-rules" class="rules-manage" type="button">管理规则</button>
+          </div>
           <label class="check-row"><input id="context-ads" type="checkbox" /><span>识别不含产品名的通用商单</span></label>
           <label class="check-row"><input id="danmaku-jump" type="checkbox" /><span>识别弹幕空降时间</span></label>
-          <label class="check-row"><input id="comment-evidence" type="checkbox" /><span>在提示中显示置顶评论佐证</span></label>
           <div class="number-grid">
             <label><span>合并间隔</span><input id="merge-gap" type="number" min="0" max="120" step="0.5" /></label>
             <label><span>前缓冲</span><input id="before-buffer" type="number" min="0" max="10" step="0.1" /></label>
@@ -103,6 +105,6 @@
           <button id="save-settings" type="button" class="save-button">保存设置</button>
         </footer>
       </div>
-    </main>
+    </main>
   </body>
 </html>

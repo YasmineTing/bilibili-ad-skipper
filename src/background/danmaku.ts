@@ -1,3 +1,4 @@
+import { BoundedMap } from "../core/cache";
 import { parseDanmakuJump, type DanmakuJumpHint } from "../core/danmaku";
 
 interface DanmakuCacheEntry {
@@ -8,7 +9,7 @@ interface DanmakuCacheEntry {
 
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const MAX_DANMAKU = 120_000;
-const cache = new Map<number, DanmakuCacheEntry>();
+const cache = new BoundedMap<number, DanmakuCacheEntry>(24);
 
 function decodeEntities(value: string): string {
   return value

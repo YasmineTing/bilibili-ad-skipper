@@ -24,7 +24,7 @@ interface ContextSignal {
   context: AdContextMatch;
 }
 
-function searchText(value: string): string {
+export function searchText(value: string): string {
   return value.normalize("NFKC").toLocaleLowerCase().replace(/[\s\u200b-\u200d\ufeff]+/g, "");
 }
 
@@ -56,6 +56,7 @@ export function mergeSegmentList(segments: Segment[]): Segment[] {
     if (segment.aiConfidence != null) {
       previous.aiConfidence = Math.max(previous.aiConfidence ?? 0, segment.aiConfidence);
     }
+    previous.ruleName ??= segment.ruleName;
   }
   return merged;
 }

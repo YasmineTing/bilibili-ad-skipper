@@ -2,20 +2,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExtensionUi } from "../src/content/ui";
 import { VCaptionsAdapter } from "../src/content/vcaptions";
-import type { Segment } from "../src/core/types";
-
-const segment: Segment = {
-  id: "segment-1",
-  startMs: 10_000,
-  endMs: 20_000,
-  matchedKeywords: ["ACEMAGIC"],
-  adContextTerms: ["严选", "优惠", "质保"],
-  hitCueIds: ["1", "2"],
-  cues: [
-    { id: "1", startMs: 10_000, endMs: 13_000, text: "介绍一下 ACEMAGIC" },
-    { id: "2", startMs: 17_000, endMs: 18_000, text: "进入评论区领优惠" }
-  ]
-};
 
 describe("vCaptions adapter", () => {
   beforeEach(() => {
@@ -50,47 +36,27 @@ describe("vCaptions adapter", () => {
   });
 });
 
-describe("prompt UI", () => {
+describe("jump feedback", () => {
   beforeEach(() => {
     document.documentElement.innerHTML = "<body></body>";
   });
 
-  it("shows keywords, subtitle quotes, comment evidence, and skip action", () => {
+  it("offers a return-to-previous-position button after a jump", () => {
     const ui = new ExtensionUi();
-    const onSkip = vi.fn();
-    ui.showPrompt(segment, {
-      found: true,
-      keyword: "ACEMAGIC",
-      author: "UP主",
-      text: "本期由 ACEMAGIC 赞助"
-    }, { onSkip, onContinue: vi.fn(), onOpenOptions: vi.fn() });
+    const onUndo = vi.fn();
+    ui.showToast("已跳过约 6 秒广告片段", onUndo);
     const root = document.getElementById("bili-ad-skipper-root")?.shadowRoot;
-    expect(root?.textContent).toContain("检测到广告片段");
-    expect(root?.textContent).toContain("UP 主置顶评论也提及该产品");
-    expect(root?.textContent).toContain("介绍一下 ACEMAGIC");
-    expect(root?.textContent).toContain("同时识别到推广语境");
-    root?.querySelector<HTMLButtonElement>('[data-action="skip"]')?.click();
-    expect(onSkip).toHaveBeenCalledOnce();
+    expect(root?.textContent).toContain("已跳过约 6 秒广告片段");
+    expect(root?.textContent).toContain("回到跳转前");
+    root?.querySelector<HTMLButtonElement>('[data-action="undo"]')?.click();
+    expect(onUndo).toHaveBeenCalledOnce();
   });
 
-  it("labels context-only detections as suspected sponsored segments", () => {
+  it("hides the return button when there is nothing to undo", () => {
     const ui = new ExtensionUi();
-    ui.showPrompt({ ...segment, matchedKeywords: [], adContextTerms: ["好消息", "官方旗舰店", "优惠券", "点击"] }, null, {
-      onSkip: vi.fn(), onContinue: vi.fn(), onOpenOptions: vi.fn()
-    });
+    ui.showToast("已就绪");
     const root = document.getElementById("bili-ad-skipper-root")?.shadowRoot;
-    expect(root?.textContent).toContain("检测到疑似商单片段");
-    expect(root?.textContent).toContain("推广语境触发");
-  });
-
-  it("shows AI confidence for AI-detected segments", () => {
-    const ui = new ExtensionUi();
-    ui.showPrompt({ ...segment, matchedKeywords: [], aiConfidence: 0.91 }, null, {
-      onSkip: vi.fn(), onContinue: vi.fn(), onOpenOptions: vi.fn()
-    });
-    const root = document.getElementById("bili-ad-skipper-root")?.shadowRoot;
-    expect(root?.textContent).toContain("AI 识别到疑似广告片段");
-    expect(root?.textContent).toContain("AI 91%");
+    expect(root?.querySelector('[data-action="undo"]')?.classList.contains("hidden")).toBe(true);
   });
 
   it("shows an optional vCaptions installation notice with the store link", () => {
@@ -98,25 +64,18 @@ describe("prompt UI", () => {
     ui.showCompanionNotice("https://microsoftedge.microsoft.com/addons/detail/example");
     const root = document.getElementById("bili-ad-skipper-root")?.shadowRoot;
     expect(root?.textContent).toContain("可选依赖：未检测到 vCaptions");
-    expect(root?.querySelector<HTMLAnchorElement>(".companion-actions a")?.href).toBe("https://microsoftedge.microsoft.com/addons/detail/example");
+    expect(root?.querySelector<HTMLAnchorElement>(".companion-actions a")?.href).toBe(
+      "https://microsoftedge.microsoft.com/addons/detail/example"
+    );
   });
 
-  it("shows a danmaku jump prompt with the target time", () => {
+  it("shows a status line with an optional settings shortcut", () => {
     const ui = new ExtensionUi();
-    const onSkip = vi.fn();
-    ui.showJumpPrompt([
-      { targetMs: 496_000, count: 3, samples: ["空降八一六"] },
-      { targetMs: 512_000, count: 1, samples: ["跳到8:32"] }
-    ], { onJump: onSkip, onContinue: vi.fn(), onOpenOptions: vi.fn() });
+    const onOpen = vi.fn();
+    ui.showStatus("正在等待 B 站字幕加载", onOpen);
     const root = document.getElementById("bili-ad-skipper-root")?.shadowRoot;
-    expect(root?.textContent).toContain("检测到空降时间");
-    expect(root?.textContent).toContain("8:16");
-    expect(root?.textContent).toContain("8:32");
-    expect(root?.textContent).toContain("空降八一六");
-    root?.querySelector<HTMLButtonElement>('[data-action="skip"]')?.click();
-    expect(onSkip).toHaveBeenCalledWith(0);
-    onSkip.mockClear();
-    root?.querySelector<HTMLButtonElement>('[data-jump-option="1"]')?.click();
-    expect(onSkip).toHaveBeenCalledWith(1);
+    expect(root?.textContent).toContain("正在等待 B 站字幕加载");
+    root?.querySelector<HTMLButtonElement>(".status button")?.click();
+    expect(onOpen).toHaveBeenCalledOnce();
   });
 });

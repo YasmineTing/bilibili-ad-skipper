@@ -3,9 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>B站广告片段跳过设置</title>
+    <title>B站广告片段跳过设置</title>
     <script type="module" crossorigin src="/assets/options.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/settings-CF0X6tpM.js">
+    <link rel="modulepreload" crossorigin href="/assets/settings-Dlq_a-TC.js">
     <link rel="stylesheet" crossorigin href="/assets/options.css">
   </head>
   <body>
@@ -42,22 +42,6 @@
 
         <section class="card">
           <h2>跳转方式</h2>
-          <label class="switch-row">
-            <span>
-              <strong>先暂停并确认</strong>
-              <small>关闭后会直接跳过，并显示短暂提示与撤销按钮。</small>
-            </span>
-            <input id="confirm-before-skip" type="checkbox" />
-            <span class="switch" aria-hidden="true"></span>
-          </label>
-          <label class="switch-row">
-            <span>
-              <strong>显示置顶评论佐证</strong>
-              <small>提示框会标出 UP 主置顶评论也提到了相关产品；评论不参与时间定位。</small>
-            </span>
-            <input id="show-comment-evidence" type="checkbox" />
-            <span class="switch" aria-hidden="true"></span>
-          </label>
           <label class="switch-row">
             <span>
               <strong>识别不含词库产品名的商单</strong>
@@ -121,6 +105,56 @@
           <p class="ai-notice">启用后会向上述 API 发送当前视频的标题和字幕文本，可能产生调用费用。API Key 仅保存于当前 Edge 扩展的本地存储，不会发送给 B 站。</p>
         </section>
 
+        <section class="card rules-card">
+          <div class="card-heading">
+            <div>
+              <h2>自定义识别规则</h2>
+              <p>导入 JSON 规则包，用关键词、必含词、排除词和正则精确控制哪些字幕算广告。适合“品牌只提一次、但整段都在讲优惠”这类内置规则容易漏掉的情况。</p>
+            </div>
+            <span id="rules-count" class="counter">0 条规则</span>
+          </div>
+          <div class="rules-toolbar">
+            <label class="button ghost file-button">选择 JSON 文件<input id="rules-file" type="file" accept=".json,application/json" /></label>
+            <button type="button" id="rules-export" class="button ghost">导出当前规则</button>
+            <button type="button" id="rules-clear" class="button ghost danger">清空规则</button>
+          </div>
+          <label class="sr-only" for="rules-json">规则 JSON</label>
+          <textarea id="rules-json" class="rules-json" rows="7" spellcheck="false" placeholder='粘贴规则 JSON，例如：
+{"rules":[{"name":"3C 商单","keywords":["旗舰店","到手价"],"required":["优惠券"],"minHits":2}]}'></textarea>
+          <div class="rules-actions">
+            <button type="button" id="rules-apply" class="button">导入粘贴内容</button>
+            <span id="rules-status" role="status" aria-live="polite"></span>
+          </div>
+          <div id="rules-list" class="rules-list"></div>
+          <details class="rules-help">
+            <summary>规则字段说明与示例</summary>
+            <dl>
+              <dt>name</dt><dd>规则名称，会写进悬浮窗日志，方便判断是哪条规则命中的。</dd>
+              <dt>keywords</dt><dd>任一命中即视为候选句。</dd>
+              <dt>required</dt><dd>整段命中里必须全部出现，用来排除“只顺口提一次品牌”的正常内容。</dd>
+              <dt>exclude</dt><dd>出现任一排除词的句子不参与命中，比如“抽奖”“转发”。</dd>
+              <dt>pattern</dt><dd>可选正则（不区分大小写），与 keywords 是“或”的关系。</dd>
+              <dt>minHits</dt><dd>至少多少句命中才算一个片段，默认 1；设成 2 可以过滤单句误判。</dd>
+              <dt>beforeSeconds / afterSeconds</dt><dd>片段前后缓冲秒数，默认 0.5 / 1.5。</dd>
+            </dl>
+            <pre class="rules-sample">{
+  "version": 1,
+  "name": "我的规则包",
+  "rules": [
+    {
+      "name": "3C 数码商单",
+      "keywords": ["旗舰店", "到手价", "以旧换新"],
+      "required": ["优惠券", "下单"],
+      "exclude": ["抽奖"],
+      "minHits": 2,
+      "beforeSeconds": 1,
+      "afterSeconds": 2
+    }
+  ]
+}</pre>
+          </details>
+        </section>
+
         <section class="card grid-card">
           <div>
             <h2>片段边界</h2>
@@ -155,6 +189,6 @@
           <li>vCaptions 的完整字幕列表位于独立扩展 iframe 中，其他扩展不能直接读取或点击其中的字幕行。本扩展使用与 vCaptions 相同的 B 站字幕接口取得时间轴，并直接调整播放进度完成跳转。</li>
         </ol>
       </section>
-    </main>
+    </main>
   </body>
 </html>

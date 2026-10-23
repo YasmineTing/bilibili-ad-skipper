@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "B站广告片段跳过（vCaptions 辅助）",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "description": "用本地字幕规则、B站弹幕空降时间和可选 DeepSeek AI 识别广告，确认或自动跳过。",
   "minimum_chrome_version": "109",
   "icons": {

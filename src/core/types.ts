@@ -15,6 +15,8 @@ export interface Segment {
   matchedKeywords: string[];
   adContextTerms: string[];
   aiConfidence?: number;
+  /** 命中自定义规则时记录规则名，用于提示框展示。 */
+  ruleName?: string;
   cues: Cue[];
 }
 
