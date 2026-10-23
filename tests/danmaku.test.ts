@@ -39,6 +39,13 @@ describe("danmaku jump parsing", () => {
   it("keeps a bare clock-like time for matching against an active ad segment", () => {
     expect(parseDanmakuJump("8:16")).toMatchObject({ targetMs: 496_000, explicit: false, kind: "time" });
   });
+
+  it("does not treat ordinary duration comments as jump targets", () => {
+    expect(parseDanmakuJump("好漫长的10分钟")).toBeNull();
+    expect(parseDanmakuJump("好漫长的五分钟")).toBeNull();
+    expect(parseDanmakuJump("原来才过去不到3分钟吗？")).toBeNull();
+    expect(parseDanmakuJump("不是吧，才过去两分钟")).toBeNull();
+  });
 });
 
 describe("Bilibili danmaku XML", () => {

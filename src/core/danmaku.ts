@@ -68,7 +68,7 @@ function validateTarget(totalSeconds: number, kind: DanmakuJumpHint["kind"], exp
   return kind;
 }
 
-function collectTimes(text: string): Array<{ seconds: number; kind: DanmakuJumpHint["kind"] }> {
+function collectTimes(text: string, explicit: boolean): Array<{ seconds: number; kind: DanmakuJumpHint["kind"] }> {
   const found: Array<{ seconds: number; kind: DanmakuJumpHint["kind"] }> = [];
   const push = (seconds: number, kind: DanmakuJumpHint["kind"]): void => {
     if (Number.isFinite(seconds) && seconds > 0) found.push({ seconds, kind });
@@ -81,37 +81,39 @@ function collectTimes(text: string): Array<{ seconds: number; kind: DanmakuJumpH
     if (third == null && second < 60) push(first * 60 + second, "time");
     if (third != null && second < 60 && third < 60) push(first * 3600 + second * 60 + third, "time");
   }
-  for (const match of text.matchAll(/(\d{1,2})\s*(?:小时|时)\s*(?:(\d{1,2})\s*分)?\s*(?:(\d{1,2})\s*秒)?/g)) {
-    const hours = Number(match[1]);
-    const minutes = Number(match[2] ?? 0);
-    const seconds = Number(match[3] ?? 0);
-    if (minutes < 60 && seconds < 60) push(hours * 3600 + minutes * 60 + seconds, "time");
-  }
-  for (const match of text.matchAll(/(\d{1,2})\s*分\s*(\d{1,2})?\s*秒?/g)) {
-    const minutes = Number(match[1]);
-    const seconds = Number(match[2] ?? 0);
-    if (minutes < 60 && seconds < 60) push(minutes * 60 + seconds, "time");
-  }
-  for (const match of text.matchAll(/(\d{1,2})\s*点\s*(\d{1,2})?\s*分?/g)) {
-    const minutes = Number(match[1]);
-    const seconds = Number(match[2] ?? 0);
-    if (minutes < 60 && seconds < 60) push(minutes * 60 + seconds, "time");
-  }
-  for (const match of text.matchAll(/([零〇一二三四五六七八九十两]{1,5})分([零〇一二三四五六七八九十两]{0,5})秒?/g)) {
-    const minutes = parseChineseNumber(match[1] ?? "");
-    const seconds = parseChineseNumber(match[2] ?? "") ?? 0;
-    if (minutes != null && minutes < 60 && seconds < 60) push(minutes * 60 + seconds, "time");
-  }
-  for (const match of text.matchAll(/([零〇一二三四五六七八九十两]{1,5})点([零〇一二三四五六七八九十两]{0,5})分?/g)) {
-    const minutes = parseChineseNumber(match[1] ?? "");
-    const seconds = parseChineseNumber(match[2] ?? "") ?? 0;
-    if (minutes != null && minutes < 60 && seconds < 60) push(minutes * 60 + seconds, "time");
-  }
-  for (const match of text.matchAll(/([零〇一二三四五六七八九十两]{1,5})(?:小时|时)(?:(\d{1,2})\s*分)?\s*(?:(\d{1,2})\s*秒)?/g)) {
-    const hours = parseChineseNumber(match[1] ?? "");
-    const minutes = Number(match[2] ?? 0);
-    const seconds = Number(match[3] ?? 0);
-    if (hours != null && minutes < 60 && seconds < 60) push(hours * 3600 + minutes * 60 + seconds, "time");
+  if (explicit) {
+    for (const match of text.matchAll(/(\d{1,2})\s*(?:小时|时)\s*(?:(\d{1,2})\s*分)?\s*(?:(\d{1,2})\s*秒)?/g)) {
+      const hours = Number(match[1]);
+      const minutes = Number(match[2] ?? 0);
+      const seconds = Number(match[3] ?? 0);
+      if (minutes < 60 && seconds < 60) push(hours * 3600 + minutes * 60 + seconds, "time");
+    }
+    for (const match of text.matchAll(/(\d{1,2})\s*分\s*(\d{1,2})?\s*秒?/g)) {
+      const minutes = Number(match[1]);
+      const seconds = Number(match[2] ?? 0);
+      if (minutes < 60 && seconds < 60) push(minutes * 60 + seconds, "time");
+    }
+    for (const match of text.matchAll(/(\d{1,2})\s*点\s*(\d{1,2})?\s*分?/g)) {
+      const minutes = Number(match[1]);
+      const seconds = Number(match[2] ?? 0);
+      if (minutes < 60 && seconds < 60) push(minutes * 60 + seconds, "time");
+    }
+    for (const match of text.matchAll(/([零〇一二三四五六七八九十两]{1,5})分([零〇一二三四五六七八九十两]{0,5})秒?/g)) {
+      const minutes = parseChineseNumber(match[1] ?? "");
+      const seconds = parseChineseNumber(match[2] ?? "") ?? 0;
+      if (minutes != null && minutes < 60 && seconds < 60) push(minutes * 60 + seconds, "time");
+    }
+    for (const match of text.matchAll(/([零〇一二三四五六七八九十两]{1,5})点([零〇一二三四五六七八九十两]{0,5})分?/g)) {
+      const minutes = parseChineseNumber(match[1] ?? "");
+      const seconds = parseChineseNumber(match[2] ?? "") ?? 0;
+      if (minutes != null && minutes < 60 && seconds < 60) push(minutes * 60 + seconds, "time");
+    }
+    for (const match of text.matchAll(/([零〇一二三四五六七八九十两]{1,5})(?:小时|时)(?:(\d{1,2})\s*分)?\s*(?:(\d{1,2})\s*秒)?/g)) {
+      const hours = parseChineseNumber(match[1] ?? "");
+      const minutes = Number(match[2] ?? 0);
+      const seconds = Number(match[3] ?? 0);
+      if (hours != null && minutes < 60 && seconds < 60) push(hours * 3600 + minutes * 60 + seconds, "time");
+    }
   }
   for (const match of text.matchAll(/([零〇一二三四五六七八九幺两]{3,4})/g)) {
     const digits = Array.from(match[1] ?? "").map((char) => CN_DIGITS[char]);
@@ -134,7 +136,7 @@ export function parseDanmakuJump(text: string): { targetMs: number; explicit: bo
   const explicit = EXPLICIT_PATTERN.test(source);
   if (!source) return null;
   if (/^(?:[1１]|[一幺])$/.test(source)) return null;
-  const times = collectTimes(source).filter((item) => validateTarget(item.seconds, item.kind, explicit, source));
+  const times = collectTimes(source, explicit).filter((item) => validateTarget(item.seconds, item.kind, explicit, source));
   if (times.length === 0) return null;
   const match = times.at(-1)!;
 
